@@ -39,6 +39,9 @@ class DataVisualizerApp:
         self.selected_segment = None
         self.initial_thresholds = {}  # 新增初始阈值存储
 
+        # 新增segment高亮相关属性
+        self.segment_rects = {}  # 存储所有segment的矩形对象 {(dtype,start,end): rect}
+        self.selected_rect = None  # 当前选中的矩形对象
 
         # 创建Matplotlib图形
         self.fig = Figure(figsize=(10, 8))
@@ -638,6 +641,25 @@ class DataVisualizerApp:
                                                ax.get_ylim()[1] - ax.get_ylim()[0],
                     alpha=0.2, color='grey'
                 ))
+
+            # 绘制segments并存储矩形对象
+            for seg in self.segments[dtype]:
+                start = seg[0]
+                end = seg[1]
+                rect = Rectangle(
+                    (start, ax.get_ylim()[0]),
+                    end - start,
+                    ax.get_ylim()[1] - ax.get_ylim()[0],
+                    alpha=0.2,
+                    color='grey',
+                    picker=True  # 启用拾取
+                )
+                ax.add_patch(rect)
+                # 存储矩形对象
+                self.segment_rects[(dtype, start, end)] = rect
+                # 如果有之前选中的segment，重新应用颜色
+        if self.selected_rect:
+            self._update_rect_color(self.selected_rect, 'green', 0.3)
         self.canvas.draw_idle()
 
     # 事件处理函数
@@ -681,34 +703,39 @@ class DataVisualizerApp:
         self.current_artist = None
 
     def on_click(self, event):
-        """处理鼠标点击事件"""
-        if event.button == 3:  # 右键弹出菜单
+        """处理鼠标点击事件（新增颜色修改）"""
+        if event.button == 3:  # 右键
             self.context_menu.tk_popup(event.x, event.y)
         elif event.button == 1:  # 左键处理
             if event.inaxes:
-                # Shift+左键拖动阈值线
-                if event.key == 'shift':
-                    for dtype in self.manual_dtypes:
-                        ax = self.axes[dtype]
-                        if ax == event.inaxes:
-                            y_threshold = self.thresholds[dtype]
-                            if y_threshold is None:
-                                continue
-                            # 检查点击位置是否接近阈值线
-                            if abs(event.ydata - y_threshold) < 0.5:
-                                self.dragging = True
-                                self.current_artist = dtype
-                                return
-                # 正常左键选择段落
-                else:
-                    for dtype, ax in self.axes.items():
-                        if ax == event.inaxes:
-                            x = event.xdata
-                            for idx, (start, end) in enumerate(self.segments[dtype]):
-                                if start <= x <= end:
-                                    self.selected_segment = (dtype, idx)
-                                    return
-                            self.selected_segment = None
+                # 恢复上一个选中的segment颜色
+                if self.selected_rect:
+                    self._update_rect_color(self.selected_rect, 'grey', 0.2)
+
+                # 查找点击的segment
+                for artist in event.inaxes.get_children():
+                    if isinstance(artist, Rectangle) and artist.contains(event)[0]:
+                        # 获取segment信息
+                        dtype = next((k for k, ax in self.axes.items() if ax == event.inaxes), None)
+                        start = artist.get_x()
+                        end = start + artist.get_width()
+
+                        # 更新当前选中segment
+                        self.selected_rect = (dtype, start, end)
+                        self._update_rect_color(self.selected_rect, 'green', 0.3)
+                        self.canvas.draw_idle()
+                        return
+
+                # 点击空白区域取消选择
+                self.selected_rect = None
+                self.canvas.draw_idle()
+
+    def _update_rect_color(self, rect_key, color, alpha):
+        """更新矩形颜色"""
+        if rect_key in self.segment_rects:
+            rect = self.segment_rects[rect_key]
+            rect.set_color(color)
+            rect.set_alpha(alpha)
 
     def delete_segment(self):
         """删除选中段落并记录操作历史"""

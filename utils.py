@@ -2,6 +2,7 @@ import cv2
 from pylab import *
 import h5py
 from scipy.signal import find_peaks, argrelextrema, savgol_filter, butter, filtfilt
+import os
 
 def get_tail_angles(df_tail, heading):
     xy = df_tail.values[:, ::2] + df_tail.values[:, 1::2] * 1j
@@ -196,7 +197,7 @@ def superimpose_annotation(video_name, fps=200, ranges=None, output_path=None, f
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # For .mp4
     video_writer = None
     # Process each image
-    count = 0
+    count = ranges[0]
     for img_file in image_files:
         # print(f'Processing {video_name} {img_file}.')
         # Load the image
