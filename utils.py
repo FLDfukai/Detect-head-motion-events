@@ -1,33 +1,7 @@
-import json
-import math
-import shutil
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
-import os
 import cv2
 from pylab import *
-from scipy.optimize import curve_fit
-from sklearn import mixture
-import matplotlib.pyplot
-import matplotlib.mlab
-from scipy.stats import norm
-from sklearn.neighbors import KernelDensity
-from sklearn.mixture import GaussianMixture
 import h5py
-from itertools import groupby
-from operator import itemgetter
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from scipy.interpolate import CubicSpline
-from scipy.stats import gaussian_kde
 from scipy.signal import find_peaks, argrelextrema, savgol_filter, butter, filtfilt
-from scipy.ndimage import gaussian_filter1d
-from scipy.interpolate import PchipInterpolator
-from sklearn.cluster import AffinityPropagation
-import seaborn as sns
-import random
-import subprocess
 
 def get_tail_angles(df_tail, heading):
     xy = df_tail.values[:, ::2] + df_tail.values[:, 1::2] * 1j
@@ -182,7 +156,7 @@ def find_valid_periods(arr, t=None):
 
     return valid_indexes
 
-def superimpose_annotation(video_name, fps=200, ranges=None, output_path=None, frame_path=None):
+def superimpose_annotation(video_name, fps=200, ranges=None, output_path=None, frame_path=None, father_path=None):
 
     # Get a list of image file names in the specified folder
     image_folder = os.path.join(frame_path, video_name)
@@ -193,7 +167,7 @@ def superimpose_annotation(video_name, fps=200, ranges=None, output_path=None, f
 
     print(f'Start superimposing: {name}')
     if output_path is None:
-        output_video_path = f'D:/visual_fist_sift/annotated_visual_videos/{name}'
+        output_video_path = f'{father_path}/annotated_visual_videos/{name}'
     else:
         output_video_path = os.path.join(output_path, name)
 

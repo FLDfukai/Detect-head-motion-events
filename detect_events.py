@@ -13,6 +13,9 @@ import json
 import os
 import matplotlib.pyplot as plt
 from tkinter import colorchooser
+import pandas as pd
+from sklearn.mixture import GaussianMixture
+from scipy.stats import gaussian_kde
 
 
 class DataVisualizerApp:
@@ -816,11 +819,11 @@ class DataVisualizerApp:
             return
 
         # 调用视频生成函数
-        self.superimpose_video_clipper(frame_folder, save_dir, start, end)
+        self.superimpose_video_clipper(frame_folder, save_dir, start, end, self.father_folder)
 
 
-    def superimpose_video_clipper(self, frame_folder, save_path, start, end):
-        superimpose_annotation(self.base_name, ranges=[start, end], output_path=save_path, frame_path=frame_folder)
+    def superimpose_video_clipper(self, frame_folder, save_path, start, end, father_folder):
+        superimpose_annotation(self.base_name, ranges=[start, end], output_path=save_path, frame_path=frame_folder, father_path=father_folder)
 
     def show_viz_settings(self):
         """显示可视化设置窗口"""
