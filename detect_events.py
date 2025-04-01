@@ -26,20 +26,21 @@ class DataVisualizerApp:
 
         # 初始化数据存储
         self.data_types = ['eye_angle', 'tail_angle', 'swimbladder_top',
-                           'swimbladder_side', 'head_motion', 'jaw_motion']  # 修改1/8
-        self.manual_dtypes = ['tail_angle', 'head_motion', 'jaw_motion']  # 修改2/8
+                           'swimbladder_side', 'head_motion', 'jaw_motion']  
+        self.manual_dtypes = ['tail_angle', 'head_motion', 'jaw_motion']  
         self.data = {
             'eye_angle': {'left': None, 'right': None},
             'tail_angle': None,
             'swimbladder_top': None,
             'swimbladder_side': None,
             'head_motion': None,
-            'jaw_motion': None  # 修改3/8
+            'jaw_motion': None  
         }
         self.segments = {t: [] for t in self.data_types}
         self.thresholds = {t: None for t in self.data_types}
         self.selected_segment = None
         self.initial_thresholds = {}
+        self.segment_annotation = None
 
         # 创建Matplotlib图形
         self.fig = Figure(figsize=(10, 8))  # 增大图形高度
@@ -729,6 +730,11 @@ class DataVisualizerApp:
     def update_visualization(self):
         print("Updating visualization")
 
+        # 清除之前的注释
+        if self.segment_annotation:
+            self.segment_annotation.remove()
+            self.segment_annotation = None
+
         for dtype in self.data_types:
             ax = self.axes[dtype]
 
@@ -773,6 +779,26 @@ class DataVisualizerApp:
                     alpha=0.2,
                     color=fill_color
                 ))
+
+                # 如果是选中的segment，添加注释显示start和end值
+                if (dtype, idx) == self.selected_segment:
+                    # 获取当前视图范围
+                    xlim = ax.get_xlim()
+                    ylim = ax.get_ylim()
+                    
+                    # 计算注释位置（在segment中间偏上的位置）
+                    x_pos = (start + end) / 2
+                    y_pos = ylim[0] + (ylim[1] - ylim[0]) * 0.8  # 在y轴80%的位置
+                    
+                    # 添加注释
+                    self.segment_annotation = ax.annotate(
+                        f"Start: {int(start)}, End: {int(end)}",
+                        xy=(x_pos, y_pos),
+                        xytext=(0, 10),  # 文本偏移
+                        textcoords='offset points',
+                        bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.8),
+                        ha='center'
+                    )
 
         self.canvas.draw_idle()
 
@@ -836,7 +862,9 @@ class DataVisualizerApp:
                                 return
                 # 正常左键选择
                 else:
+                    old_selection = self.selected_segment
                     self.selected_segment = None  # 先重置选中状态
+                    
                     for dtype, ax in self.axes.items():
                         if ax == event.inaxes:
                             x = event.xdata
@@ -848,9 +876,10 @@ class DataVisualizerApp:
                             if self.selected_segment:
                                 break  # 找到匹配项后退出循环
 
-                    # 立即刷新显示
-                    self.update_visualization()
-                    self.canvas.draw_idle()
+                    # 只有当选择改变时才刷新显示
+                    if old_selection != self.selected_segment:
+                        self.update_visualization()
+                        self.canvas.draw_idle()
 
     def delete_segment(self):
         """删除选中段落并记录操作历史"""
