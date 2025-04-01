@@ -16,6 +16,7 @@ from tkinter import colorchooser
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 from scipy.stats import gaussian_kde
+import traceback
 
 
 class DataVisualizerApp:
@@ -25,38 +26,36 @@ class DataVisualizerApp:
 
         # 初始化数据存储
         self.data_types = ['eye_angle', 'tail_angle', 'swimbladder_top',
-                           'swimbladder_side', 'head_motion']
-        self.manual_dtypes = ['tail_angle', 'head_motion']
+                           'swimbladder_side', 'head_motion', 'jaw_motion']  # 修改1/8
+        self.manual_dtypes = ['tail_angle', 'head_motion', 'jaw_motion']  # 修改2/8
         self.data = {
             'eye_angle': {'left': None, 'right': None},
             'tail_angle': None,
             'swimbladder_top': None,
             'swimbladder_side': None,
-            'head_motion': None
+            'head_motion': None,
+            'jaw_motion': None  # 修改3/8
         }
         self.segments = {t: [] for t in self.data_types}
         self.thresholds = {t: None for t in self.data_types}
         self.selected_segment = None
-        self.initial_thresholds = {}  # 新增初始阈值存储
-
-        # 新增segment高亮相关属性
-        self.segment_rects = {}  # 存储所有segment的矩形对象 {(dtype,start,end): rect}
-        self.selected_rect = None  # 当前选中的矩形对象
+        self.initial_thresholds = {}
 
         # 创建Matplotlib图形
-        self.fig = Figure(figsize=(10, 8))
+        self.fig = Figure(figsize=(10, 8))  # 增大图形高度
         self.fig.subplots_adjust(
-            left=0.1,  # 左边距
-            right=0.95,  # 右边距
-            bottom=0.05,  # 底部边距
-            top=0.95,  # 顶部边距
-            hspace=0.6  # 垂直间距（关键参数）
+            left=0.1,
+            right=0.95,
+            bottom=0.03,  # 减小底部边距
+            top=0.97,  # 减小顶部边距
+            hspace=0.5  # 减小垂直间距
         )
         self.axes = {}
         self.threshold_lines = {}
         self.data_lines = {}
+
         for i, dtype in enumerate(self.data_types, 1):
-            ax = self.fig.add_subplot(5, 1, i)
+            ax = self.fig.add_subplot(6, 1, i)  # 改为6行1列
             ax.set_title(dtype.replace('_', ' ').title())
             self.axes[dtype] = ax
 
@@ -82,8 +81,6 @@ class DataVisualizerApp:
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         self.undo_stack = []
-
-        # 绑定键盘事件
         self.root.bind('<Control-z>', self.undo_last_delete)
 
         # 初始化进度条
@@ -92,7 +89,7 @@ class DataVisualizerApp:
             showvalue=True, command=self.on_scale_drag
         )
         self.progress_scale.pack(side=tk.BOTTOM, fill=tk.X)
-        self.window_size = 500  # 初始可视窗口大小
+        self.window_size = 500
         self.data_length = 0
 
         # 绑定事件
@@ -144,10 +141,9 @@ class DataVisualizerApp:
             'tail_angle': '#00FF00',
             'swimbladder_top': '#FFA500',
             'swimbladder_side': '#800080',
-            'head_motion': '#008080'
+            'head_motion': '#008080',
+            'jaw_motion': '#FF00FF'  # 新增品红色
         }
-
-        # 颜色输入框缓存
         self.color_entries = {}
 
         self.dragging = None
@@ -174,7 +170,8 @@ class DataVisualizerApp:
             'tail_angle': f'{self.father_folder}/ztrack_results_h5/{name_dict[self.base_name + '.h5']}',
             'swimbladder_top': f"{self.father_folder}/temp_check_vector_motion/swimbladder_motion/{name_dict[self.base_name + '.h5'].split('.')[0].split('_Trial')[0] + '-T' + name_dict[self.base_name + '.h5'].split('.')[0].split('Trial')[1]}/TOPCAM/y_shift.npy",
             'swimbladder_side': f"{self.father_folder}/temp_check_vector_motion/swimbladder_motion/{name_dict[self.base_name + '.h5'].split('.')[0].split('_Trial')[0] + '-T' + name_dict[self.base_name + '.h5'].split('.')[0].split('Trial')[1]}/SIDECAM/x_shift.npy",
-            'head_motion': f'{self.father_folder}/temp_check_vector_motion/distance_data/{self.base_name}/original/l2_norm_4_35.npy'
+            'head_motion': f'{self.father_folder}/temp_check_vector_motion/distance_data/{self.base_name}/original/l2_norm_4_35.npy',
+            'jaw_motion': f'{self.father_folder}/temp_check_vector_motion/displacement_rotation_data/data/{self.base_name}/'
         }
         print('loading data...')
 
@@ -232,11 +229,25 @@ class DataVisualizerApp:
 
                     self.data[dtype] = np.load(full_path)
 
+                elif dtype == 'jaw_motion':
+                    full_path = data_paths[dtype]
+                    if not os.path.exists(full_path):
+                        raise FileNotFoundError(f"文件不存在: {full_path}")
+                    jaw_front_motion_x = np.load(
+                        f'{full_path}/jaw_front_motion_x.npy')
+                    jaw_front_motion_y = np.load(
+                        f'{full_path}/jaw_front_motion_y.npy')
+                    all = np.sqrt(jaw_front_motion_x ** 2 + jaw_front_motion_y ** 2)
+                    all[0] = np.mean(all[1:])
+                    print('jaw shape:', all.shape)
+                    self.data[dtype] = all
+
                 # 初始自动计算阈值和分段
                 self.initial_calculation(dtype)
                 self.update_threshold_line(dtype)
                 self.initial_thresholds['tail_angle'] = self.thresholds['tail_angle']
                 self.initial_thresholds['head_motion'] = self.thresholds['head_motion']
+                self.initial_thresholds['jaw_motion'] = self.thresholds['jaw_motion']
 
             self.update_visualization()
             self.canvas.draw_idle()
@@ -247,7 +258,17 @@ class DataVisualizerApp:
             self.progress_scale.set(0)
             self._update_axes_xlim(0, self.window_size)
         except Exception as e:
-            messagebox.showerror("加载错误", str(e))
+            traceback.print_exc()  # 打印完整错误信息
+            messagebox.showerror("加载错误", f"数据加载失败: {str(e)}")
+            self.reset_state()  # 新增重置状态方法
+
+    def reset_state(self):
+        """加载失败时重置所有状态"""
+        self.data = {t: None for t in self.data_types}
+        self.segments = {t: [] for t in self.data_types}
+        self.thresholds = {t: None for t in self.data_types}
+        self.progress_scale.set(0)
+        self.canvas.draw_idle()
 
     def _update_axes_xlim(self, start, end):
         """统一更新所有子图的x轴范围"""
@@ -287,6 +308,8 @@ class DataVisualizerApp:
             self.thresholds[dtype], self.segments[dtype] = self.calculate_tail()
         elif dtype == 'head_motion':
             self.thresholds[dtype], self.segments[dtype] = self.calculate_head_motion()
+        elif dtype == 'jaw_motion':
+            self.thresholds[dtype], self.segments[dtype] = self.calculate_jaw_motion()
 
     def update_threshold_line(self, dtype):
         """更新阈值线显示"""
@@ -300,48 +323,44 @@ class DataVisualizerApp:
         """弹出阈值调整对话框"""
         dialog = tk.Toplevel(self.root)
         dialog.title("调整阈值")
-        dialog.geometry("350x180")  # 增大窗口高度
+        dialog.geometry("350x260")  # 增加高度
 
         # 获取初始阈值
-        initial_tail = self.initial_thresholds.get('tail_angle', 'N/A')
-        initial_head = self.initial_thresholds.get('head_motion', 'N/A')
+        components = [
+            ('tail_angle', 'Tail bout'),
+            ('head_motion', 'Head Motion'),
+            ('jaw_motion', 'Jaw Movement')  # 新增项
+        ]
 
-        # Tail阈值部分
-        tk.Label(dialog, text="Tail bout Threshold:", font=('Arial', 10)).grid(row=0, column=0, padx=5, pady=2,
-                                                                                sticky='w')
-        tk.Label(dialog, text=f"初始值: {initial_tail:.2f}", font=('Arial', 8), fg='gray').grid(row=1, column=0, padx=5,
-                                                                                                sticky='w')
-        tail_entry = tk.Entry(dialog)
-        tail_entry.insert(0, f"{self.thresholds['tail_angle']:.2f}")
-        tail_entry.grid(row=2, column=0, padx=5, pady=5)
+        entries = {}
+        for row, (dtype, label) in enumerate(components):
+            # 初始值显示
+            initial = self.initial_thresholds.get(dtype, 'N/A')
+            tk.Label(dialog, text=f"{label} Threshold:",
+                     font=('Arial', 10)).grid(row=row * 3, column=0, padx=5, sticky='w')
+            tk.Label(dialog, text=f"初始值: {initial:.2f}",
+                     font=('Arial', 8), fg='gray').grid(row=row * 3 + 1, column=0, padx=5, sticky='w')
 
-        # Head Motion阈值部分
-        tk.Label(dialog, text="Head Motion Threshold:", font=('Arial', 10)).grid(row=0, column=1, padx=5, pady=2,
-                                                                                 sticky='w')
-        tk.Label(dialog, text=f"初始值: {initial_head:.2f}", font=('Arial', 8), fg='gray').grid(row=1, column=1, padx=5,
-                                                                                                sticky='w')
-        head_entry = tk.Entry(dialog)
-        head_entry.insert(0, f"{self.thresholds['head_motion']:.2f}")
-        head_entry.grid(row=2, column=1, padx=5, pady=5)
+            # 输入框
+            entry = tk.Entry(dialog)
+            entry.insert(0, f"{self.thresholds[dtype]:.2f}")
+            entry.grid(row=row * 3 + 2, column=0, padx=5, pady=2)
+            entries[dtype] = entry
 
-        # 确认按钮
+        # 应用按钮
         def apply_changes():
             try:
-                new_tail = float(tail_entry.get())
-                new_head = float(head_entry.get())
-
-                # 更新阈值并重新计算
-                self._update_threshold('tail_angle', new_tail)
-                self._update_threshold('head_motion', new_head)
+                for dtype, entry in entries.items():
+                    new_val = float(entry.get())
+                    self._update_threshold(dtype, new_val)
 
                 dialog.destroy()
                 self.update_visualization()
                 self.canvas.draw_idle()
-
             except ValueError:
                 messagebox.showerror("输入错误", "请输入有效的数字")
 
-        tk.Button(dialog, text="应用", command=apply_changes).grid(row=3, columnspan=2, pady=10)
+        tk.Button(dialog, text="应用", command=apply_changes).grid(row=len(components) * 3, columnspan=2, pady=10)
 
     def _update_threshold(self, dtype, new_value):
         """通用阈值更新方法"""
@@ -357,6 +376,8 @@ class DataVisualizerApp:
             _, self.segments[dtype] = self.calculate_tail(t=new_value)
         elif dtype == 'head_motion':
             _, self.segments[dtype] = self.calculate_head_motion(t=new_value)
+        elif dtype == 'jaw_motion':  # 新增jaw_motion处理
+            _, self.segments[dtype] = self.calculate_jaw_motion(t=new_value)
 
     def calculate_eye(self):
         print('Calculating eye convergence...')
@@ -594,72 +615,165 @@ class DataVisualizerApp:
 
         return antimode_value, bouts
 
+    def calculate_jaw_motion(self, t=None):
+        all = self.data['jaw_motion']
+
+        std_dev_d = 10
+        kernel_size_d = 50  # Adjust size as needed
+        bw_method = 0.025
+
+        # derivatives = np.diff(l2_norms, axis=0)
+        gaussian_kernel = (
+                np.exp(-0.5 * (np.linspace(-kernel_size_d // 2, kernel_size_d // 2, kernel_size_d) / std_dev_d) ** 2) /
+                np.sum(np.exp(
+                    -0.5 * (np.linspace(-kernel_size_d // 2, kernel_size_d // 2, kernel_size_d) / std_dev_d) ** 2)))
+
+        # Convolve the derivative with the Gaussian kernel
+        convolved_result = np.convolve(all, gaussian_kernel, mode='same')
+
+        if t is None:
+            # Create a Gaussian kernel with standard deviation
+            kde = gaussian_kde(convolved_result, bw_method=bw_method)
+            # Create a range of values to evaluate the KDE
+            x = np.linspace(0, np.max(convolved_result), 5000)  # Adjust range as needed
+
+            # Evaluate the KDE on the range of values
+            kde_values = kde(x)
+            kde_minima = argrelextrema(kde_values, np.less)[0]
+
+            # Check for bimodality by finding peaks in the KDE
+            peaks, _ = find_peaks(kde_values, height=0)  # Find peaks in the KDE
+            num_peaks = len(peaks)
+
+            if num_peaks == 2:
+                print(f"The distribution is bimodal")
+                inflection_indices = kde_minima[0]
+                antimode_value = x[inflection_indices]
+                print(f"The distribution's antimode value is {antimode_value}")
+            elif num_peaks > 2:
+                print(f"The distribution is multimodal")
+                inflection_indices = kde_minima[0]
+                antimode_value = x[inflection_indices]
+                print(f"The distribution is multimodal. Number of peaks: {num_peaks}")
+            else:
+                print(f"The distribution is not bimodal. Number of peaks: {num_peaks}")
+                exit()
+        else:
+            antimode_value = t
+
+        # delete peaks that are below the threshold.
+        peaks_data, _ = find_peaks(convolved_result)
+        peaks_data = np.delete(peaks_data, np.argwhere(convolved_result[peaks_data] < antimode_value), axis=0)
+
+        # Find local minima and delete those above 0.
+        local_minima = argrelextrema(convolved_result, np.less)[0]
+        local_minima = np.array([num for num in local_minima if convolved_result[num] < antimode_value])
+        # local_minima = np.array([num for num in local_minima if convolved_result[num] < cut_off])
+
+        peak_to_delete = []
+        index_del = 0
+        stop_point_of_peak_sifting = peaks_data[peaks_data < local_minima[-1]].shape[0] - 1
+        peaks_data = peaks_data[: stop_point_of_peak_sifting + 1]
+
+        while index_del <= stop_point_of_peak_sifting:
+            if index_del == 0:
+                larger_numbers_past = local_minima[local_minima < peaks_data[index_del]]
+                if np.any(larger_numbers_past):
+                    index_del += 1
+                else:
+                    peak_to_delete.append(index_del)
+                    index_del += 1
+            elif index_del <= stop_point_of_peak_sifting:
+                larger_numbers_past = local_minima[
+                    (peaks_data[index_del - 1] < local_minima) & (local_minima < peaks_data[index_del])]
+                if np.any(larger_numbers_past):
+                    index_del += 1
+                else:
+                    peak_to_delete.append(index_del)
+                    index_del += 1
+
+        peaks_data = np.delete(peaks_data, peak_to_delete, axis=0)
+
+        bouts = []
+        # length_bouts = []
+        for i in range(peaks_data.shape[0]):
+            if i == 0:
+                nearest_minima = find_nearest_bigger(peaks_data[i], peaks_data[i + 1], local_minima, convolved_result,
+                                                     antimode_value)
+                start = find_start_point(0, peaks_data[i], convolved_result, antimode_value)
+                bouts.append([start, nearest_minima])
+                # length_bouts.append(nearest_minima - peaks_data[i])
+            elif i < peaks_data.shape[0] - 1:
+                nearest_minima = find_nearest_bigger(peaks_data[i], peaks_data[i + 1], local_minima, convolved_result,
+                                                     antimode_value)
+                start = find_start_point(peaks_data[i - 1], peaks_data[i], convolved_result, antimode_value)
+                bouts.append([start, nearest_minima])
+                # length_bouts.append(nearest_minima-peaks_data[i])
+            else:
+                nearest_minima = find_nearest_bigger(peaks_data[i], convolved_result.shape[0], local_minima,
+                                                     convolved_result, antimode_value)
+                start = find_start_point(peaks_data[i - 1], peaks_data[i], convolved_result, antimode_value)
+                bouts.append([start, nearest_minima])
+                # length_bouts.append(nearest_minima-peaks_data[i])
+
+        print(f"Number of the jaw bouts: {len(bouts)}")
+
+        # for accidentally overlapping bouts.
+        for i in range(1, len(bouts)):
+            if bouts[i - 1][1] >= bouts[i][0]:
+                bouts[i - 1][1] = bouts[i][0] - 1
+
+        return antimode_value, bouts
+
+
     def update_visualization(self):
         print("Updating visualization")
 
         for dtype in self.data_types:
             ax = self.axes[dtype]
 
-            # 清除非原始数据元素
+            # 清除非原始元素
             for artist in ax.lines[2:]:
                 artist.remove()
             for patch in ax.patches:
                 patch.remove()
 
             # 更新数据线
-            if dtype == 'eye_angle' and self.data[dtype] is not None:
+            if dtype == 'eye_angle' and self.data[dtype]['left'] is not None:
                 self.data_lines[dtype]['left'].set_data(
-                    np.arange(self.data[dtype]['left'].shape[0]),
+                    np.arange(len(self.data[dtype]['left'])),
                     self.data[dtype]['left']
                 )
                 self.data_lines[dtype]['right'].set_data(
-                    np.arange(self.data[dtype]['right'].shape[0]),
+                    np.arange(len(self.data[dtype]['right'])),
                     self.data[dtype]['right']
                 )
-                ax.relim()
-                ax.autoscale_view()
-
-
             elif self.data[dtype] is not None:
                 self.data_lines[dtype].set_data(
-                    np.arange(self.data[dtype].shape[0]),
+                    np.arange(len(self.data[dtype])),
                     self.data[dtype]
                 )
-                ax.relim()
-                ax.autoscale_view()
+            ax.relim()
+            ax.autoscale_view()
 
-            # 绘制segments
-            if dtype == 'head_motion':
-                print(self.segments[dtype])
-            for temp_bouts in self.segments[dtype]:
-                start = temp_bouts[0]
-                end = temp_bouts[1]
+            # 绘制segments（新增颜色判断）
+            for idx, (start, end) in enumerate(self.segments[dtype]):
+                # 边界线
                 ax.axvline(start, color='red', linestyle='--', alpha=0.7)
                 ax.axvline(end, color='blue', linestyle='--', alpha=0.7)
-                ax.add_patch(Rectangle(
-                    (start, ax.get_ylim()[0]), end - start,
-                                               ax.get_ylim()[1] - ax.get_ylim()[0],
-                    alpha=0.2, color='grey'
-                ))
 
-            # 绘制segments并存储矩形对象
-            for seg in self.segments[dtype]:
-                start = seg[0]
-                end = seg[1]
-                rect = Rectangle(
+                # 根据选中状态设置颜色
+                fill_color = 'lime' if (dtype, idx) == self.selected_segment else 'grey'
+
+                # 矩形填充
+                ax.add_patch(Rectangle(
                     (start, ax.get_ylim()[0]),
                     end - start,
                     ax.get_ylim()[1] - ax.get_ylim()[0],
                     alpha=0.2,
-                    color='grey',
-                    picker=True  # 启用拾取
-                )
-                ax.add_patch(rect)
-                # 存储矩形对象
-                self.segment_rects[(dtype, start, end)] = rect
-                # 如果有之前选中的segment，重新应用颜色
-        if self.selected_rect:
-            self._update_rect_color(self.selected_rect, 'green', 0.3)
+                    color=fill_color
+                ))
+
         self.canvas.draw_idle()
 
     # 事件处理函数
@@ -703,39 +817,40 @@ class DataVisualizerApp:
         self.current_artist = None
 
     def on_click(self, event):
-        """处理鼠标点击事件（新增颜色修改）"""
-        if event.button == 3:  # 右键
+        """处理鼠标点击事件（修改后的版本）"""
+        if event.button == 3:  # 右键菜单
             self.context_menu.tk_popup(event.x, event.y)
         elif event.button == 1:  # 左键处理
             if event.inaxes:
-                # 恢复上一个选中的segment颜色
-                if self.selected_rect:
-                    self._update_rect_color(self.selected_rect, 'grey', 0.2)
+                # Shift+左键拖动阈值线（原有逻辑）
+                if event.key == 'shift':
+                    for dtype in self.manual_dtypes:
+                        ax = self.axes[dtype]
+                        if ax == event.inaxes:
+                            y_threshold = self.thresholds[dtype]
+                            if y_threshold is None:
+                                continue
+                            if abs(event.ydata - y_threshold) < 0.5:
+                                self.dragging = True
+                                self.current_artist = dtype
+                                return
+                # 正常左键选择
+                else:
+                    self.selected_segment = None  # 先重置选中状态
+                    for dtype, ax in self.axes.items():
+                        if ax == event.inaxes:
+                            x = event.xdata
+                            # 精确查找匹配的segment
+                            for idx, (start, end) in enumerate(self.segments[dtype]):
+                                if start <= x <= end:
+                                    self.selected_segment = (dtype, idx)
+                                    break  # 找到第一个匹配项即退出
+                            if self.selected_segment:
+                                break  # 找到匹配项后退出循环
 
-                # 查找点击的segment
-                for artist in event.inaxes.get_children():
-                    if isinstance(artist, Rectangle) and artist.contains(event)[0]:
-                        # 获取segment信息
-                        dtype = next((k for k, ax in self.axes.items() if ax == event.inaxes), None)
-                        start = artist.get_x()
-                        end = start + artist.get_width()
-
-                        # 更新当前选中segment
-                        self.selected_rect = (dtype, start, end)
-                        self._update_rect_color(self.selected_rect, 'green', 0.3)
-                        self.canvas.draw_idle()
-                        return
-
-                # 点击空白区域取消选择
-                self.selected_rect = None
-                self.canvas.draw_idle()
-
-    def _update_rect_color(self, rect_key, color, alpha):
-        """更新矩形颜色"""
-        if rect_key in self.segment_rects:
-            rect = self.segment_rects[rect_key]
-            rect.set_color(color)
-            rect.set_alpha(alpha)
+                    # 立即刷新显示
+                    self.update_visualization()
+                    self.canvas.draw_idle()
 
     def delete_segment(self):
         """删除选中段落并记录操作历史"""
@@ -856,20 +971,21 @@ class DataVisualizerApp:
         """显示可视化设置窗口"""
         settings_win = tk.Toplevel(self.root)
         settings_win.title("可视化设置")
-        settings_win.geometry("400x400")
+        settings_win.geometry("400x450")  # 增加高度
 
         # 创建颜色设置区域
         color_frame = tk.LabelFrame(settings_win, text="线条颜色设置")
         color_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        # 颜色配置项
+
         color_items = [
             ("Eye Left", 'eye_left'),
             ("Eye Right", 'eye_right'),
             ("Tail Angle", 'tail_angle'),
             ("Swimbladder Top", 'swimbladder_top'),
             ("Swimbladder Side", 'swimbladder_side'),
-            ("Head Motion", 'head_motion')
+            ("Head Motion", 'head_motion'),
+            ("Jaw Movement", 'jaw_motion')  # 新增项
         ]
 
         # 创建颜色选择行
