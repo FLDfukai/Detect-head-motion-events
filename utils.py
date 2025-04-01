@@ -153,7 +153,7 @@ def find_valid_periods(arr, t=None):
         if len(segment) > 0:
             # Check if at least half are above 0.8
             if np.sum(arr[segment] > 0.6) >= len(segment) / 2:
-                valid_indexes.append(segment)
+                valid_indexes.append([segment[0], segment[-1]])
 
     return valid_indexes
 
